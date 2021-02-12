@@ -1,0 +1,16 @@
+{
+  "name": "authorization-app",
+  "version": "1.0.0",
+  "description": "To implement different ways of role and action based user authorization",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/index.js"
+  },
+  "author": "Abhishek Kaushik",
+  "license": "ISC",
+  "dependencies": {
+    "@hapi/hapi": "^20.1.0",
+    "redis": "^3.0.2"
+  }
+}
