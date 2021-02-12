@@ -15,6 +15,9 @@ const getAsync = promisify(redisClient.get).bind(redisClient);
 const setAsync = promisify(redisClient.set).bind(redisClient);
 const delAsync = promisify(redisClient.del).bind(redisClient);
 
+
+//E.g. for delete there can be multiple routes - one for single delete and other for multiple deletes
+
 const database_roles = ['customer','admin','marketing_executive','customer_executive','nutritionist']
 const database_resources = ['marketing','operations','reports','customer_profiles','customer_support_tickets']
 const database_role_actions = {
@@ -22,7 +25,7 @@ const database_role_actions = {
 		'marketing':[''],
 		'operations':[''],
 		'reports':['view_own','edit_own'],
-		'customer_profiles':['view_own','edit_own'],
+		'customer_profiles':['view_own','edit_own','delete_own'],
 		'customer_support_tickets':['view_own']
 	},
 	'admin':{
@@ -33,7 +36,7 @@ const database_role_actions = {
 		'customer_support_tickets':['all']
 	},
 	'marketing_executive':{
-		'marketing':['view_many','edit_many','create_many'],
+		'marketing':['view_many','edit_many','edit_own','create_many'],
 		'operations':[''],
 		'reports':[''],
 		'customer_profiles':['view_many'],
@@ -44,12 +47,12 @@ const database_role_actions = {
 		'operations':[''],
 		'reports':[''],
 		'customer_profiles':[''],
-		'customer_support_tickets':['view_many','edit_many']
+		'customer_support_tickets':['view_many','edit_many','edit_own']
 	},
 	'nutritionist':{
 		'marketing':[''],
 		'operations':[''],
-		'reports':['view_many','edit_many','delete_many'],
+		'reports':['view_many','edit_many','edit_own','delete_many'],
 		'customer_profiles':[''],
 		'customer_support_tickets':['']
 	}
@@ -68,21 +71,20 @@ const isAuthorized = async ({session_id,resource_name,action_performed})=>{
 		var user_role;
 		var cachedData = getAsync(session_id).then((cachedData)=>{
     	if (cachedData != null) {
-    		console.log("cd"+cachedData);
-      	user_role = JSON.parse(cachedData).role;
+      	user_role = JSON.parse(cachedData)['role'];
 
       	//makes database queries to find out the actions allowed for the given role
-      	permitted_user_actions = database_role_actions.user_role.resource_name;
+      	permitted_user_actions = database_role_actions[user_role][resource_name];
       	if(permitted_user_actions.includes(action_performed) || permitted_user_actions.includes('all')){
-      		return resolve(true);
+      		resolve(true);
       	}
-      		return resolve(false);
+      		resolve(false);
     	} else {
-    		return resolve(false);
+    		resolve(false);
     }
 	}).catch((error)=>{
 		console.log(error);
-		return resolve(false);
+		resolve(false);
 	});
 	});
 
@@ -95,7 +97,7 @@ server.route({
     method: 'GET',
     path: '/',
     handler: (request, h) => {
-    	console.log(request.info.id);
+    	console.log(request.server.info.id);
 
         return "Hello World"
     }
@@ -105,12 +107,13 @@ server.route({
     method: 'GET',
     path: '/login',
     handler: (request, h) => {
-    	var role = "marketing_executive";
+    	var role = "admin";
     	const user_data = {
     		"role":role
     	};
-    	setAsync(request.info.id, JSON.stringify(user_data)).then((data)=>{
-    		console.log("added to cache")
+    	setAsync(request.server.info.id, JSON.stringify(user_data)).then((data)=>{
+
+    		console.log("added to cache "+request.server.info.id)
     	})
     	.catch((error)=>{
     		console.log("error occurred adding to cache",error)
@@ -124,9 +127,8 @@ server.route({
 server.route({
     method: 'GET',
     path: '/get-users',
-    handler: (request,h) => {
-    	console.log(isAuthorized({"session_id":request.info.id,"resource_name":"customer_profiles","action_performed":"view_many"}))
-    		if(isAuthorized({"session_id":request.info.id,"resource_name":"customer_profiles","action_performed":"view_many"}))
+    handler: async (request,h) => {
+    		if(await isAuthorized({"session_id":request.server.info.id,"resource_name":"customer_profiles","action_performed":"view_many"}))
     		{
     			//call route handler
     			return "got users";
@@ -138,8 +140,8 @@ server.route({
 server.route({
     method: 'GET',
     path: '/delete-user',
-    handler: (request, h) => {
-    	if(isAuthorized({"session_id":request.info.id,"resource_name":"customer_profiles","action_performed":"delete_one"}))
+    handler: async (request, h) => {
+    	if(await isAuthorized({"session_id":request.server.info.id,"resource_name":"customer_profiles","action_performed":"delete_own"}))
     		{
     			//call route handler
     			return "deleted user";
@@ -150,9 +152,22 @@ server.route({
 
 server.route({
     method: 'GET',
+    path: '/delete-users',
+    handler: async (request, h) => {
+    	if(await isAuthorized({"session_id":request.server.info.id,"resource_name":"customer_profiles","action_performed":"delete_many"}))
+    		{
+    			//call route handler
+    			return "deleted multiple users";
+    		}
+        	return "unauthorized access";
+    }
+});
+
+server.route({
+    method: 'GET',
     path: '/edit-report',
-    handler: (request, h) => {
-    	if(isAuthorized({"session_id":request.info.id,"resource_name":"reports","action_performed":"edit_one"}))
+    handler: async (request, h) => {
+    	if(await isAuthorized({"session_id":request.server.info.id,"resource_name":"reports","action_performed":"edit_own"}))
     		{
     			//call route handler
     			return "edited report";
@@ -164,8 +179,8 @@ server.route({
 server.route({
     method: 'GET',
     path: '/new-marketing-campaign',
-    handler: (request, h) => {
-    	if(isAuthorized({"session_id":request.info.id,"resource_name":"marketing","action_performed":"create_many"}))
+    handler: async (request, h) => {
+    	if(await isAuthorized({"session_id":request.server.info.id,"resource_name":"marketing","action_performed":"create_many"}))
     		{
     			//call route handler
     			return "created new campaign"
@@ -177,8 +192,8 @@ server.route({
 server.route({
     method: 'GET',
     path: '/delete-marketing-campaign',
-    handler: (request, h) => {
-    	if(isAuthorized({"session_id":request.info.id,"resource_name":"marketing","action_performed":"delete_one"}))
+    handler: async (request, h) => {
+    	if(await isAuthorized({"session_id":request.server.info.id,"resource_name":"marketing","action_performed":"delete_own"}))
     		{
     			//call route handler
     			return "deleted new campaign"
@@ -191,7 +206,7 @@ server.route({
     method: 'GET',
     path: '/logout',
     handler:  (request, h) => {
-    	delAsync(request.info.id).then((data)=>{
+    	delAsync(request.server.info.id).then((data)=>{
     		console.log("deleted from cache")
     	})
     	.catch((error)=>{
